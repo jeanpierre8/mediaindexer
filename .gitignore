@@ -1,0 +1,46 @@
+# OS / éditeur
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Logs
+*.log
+logs/
+
+# Node / frontend
+node_modules/
+.vite/
+dist/
+
+# Tauri / Rust
+src-tauri/target/
+target/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+ENV/
+
+# PyInstaller
+build/
+
+# Artefacts générés
+*.msi
+*.exe
+*.zip
+*.7z
+
+# SQLite / runtime
+*.db-shm
+*.db-wal
+*.sqlite-journal
+
+# Env / secrets
+.env
+.env.*
+!.env.example

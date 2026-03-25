@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Media Indexer</title>
+  <link rel="stylesheet" href="style.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500&display=swap" rel="stylesheet"/>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="logo"><span class="logo-icon"></span><span class="logo-text">MEDIA<br>INDEXER</span></div>
+    <nav class="nav">
+      <button class="nav-btn active" data-tab="all"><span class="nav-icon">▦</span> Tous <span class="nav-count" id="count-all">—</span></button>
+      <button class="nav-btn" data-tab="favoris"><span class="nav-icon">⭐</span> Favoris <span class="nav-count" id="count-favoris">—</span></button>
+      <button class="nav-btn" data-tab="recent"><span class="nav-icon">◷</span> Récents</button>
+      <button class="nav-btn" data-tab="series"><span class="nav-icon">◈</span> Séries <span class="nav-count" id="count-series">—</span></button>
+      <button class="nav-btn" data-tab="pdf"><span class="nav-icon">◻</span> PDF <span class="nav-count" id="count-pdf">—</span></button>
+      <button class="nav-btn" data-tab="images"><span class="nav-icon">◱</span> Images <span class="nav-count" id="count-images">—</span></button>
+      <button class="nav-btn" data-tab="music"><span class="nav-icon">◎</span> Musique <span class="nav-count" id="count-music">—</span></button>
+      <button class="nav-btn" data-tab="others"><span class="nav-icon">◇</span> Autres</button>
+      <button class="nav-btn" data-tab="dupes"><span class="nav-icon">⊘</span> Doublons</button>
+      <button class="nav-btn" data-tab="missing"><span class="nav-icon">△</span> Manquants</button>
+      <button class="nav-btn" data-tab="private"><span class="nav-icon">🔒</span> Privé</button>
+      <button class="nav-btn" data-tab="regroup"><span class="nav-icon">⊕</span> Regrouper</button>
+      <button class="nav-btn" data-tab="corrupted"><span class="nav-icon">⚠</span> Corrompus</button>
+      <button class="nav-btn" data-tab="compare"><span class="nav-icon">⇄</span> Comparer</button>
+      <button class="nav-btn" data-tab="evolution"><span class="nav-icon">↗</span> Évolution</button>
+      <button class="nav-btn" data-tab="rules"><span class="nav-icon">⚡</span> Règles auto</button>
+      <button class="nav-btn" data-tab="stats"><span class="nav-icon">◉</span> Stats</button>
+    </nav>
+    <div class="sidebar-footer">
+      <button class="btn-lock" id="btn-lock">🔒</button>
+      <button class="btn-scan" id="btn-scan">+ Scanner</button>
+      <div class="scan-progress-bar" id="scan-progress-bar" style="display:none">
+        <div class="scan-progress-fill" id="scan-progress-fill"></div>
+        <div class="scan-progress-text" id="scan-progress-text">0 fichiers…</div>
+      </div>
+      <button class="btn-export" id="btn-export">↓ Export</button>
+      <button class="btn-settings" id="btn-settings">⚙ Paramètres</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="search-wrap">
+        <span class="search-icon">⌕</span>
+        <input type="text" id="search-input" class="search-input" placeholder="Ctrl+F · Rechercher…"/>
+        <button class="search-clear" id="search-clear">✕</button>
+      </div>
+      <div class="topbar-right">
+        <select id="disk-filter" class="disk-filter"><option value="Tous">Tous les disques</option></select>
+        <div class="status-pill"><span class="status-dot" id="status-dot"></span><span id="status-text">Prêt</span></div>
+      </div>
+    </header>
+    <div id="notif-zone">
+      <div class="notif-banner" id="disk-notif" style="display:none;">
+        <div class="notif-text"><strong id="disk-notif-title">Nouveau disque</strong><br/><span id="disk-notif-sub"></span></div>
+        <button class="notif-scan-btn" id="btn-notif-scan">Scanner</button>
+        <button class="notif-ignore-btn" id="btn-notif-ignore">Ignorer</button>
+      </div>
+    </div>
+    <div class="panel-header">
+      <span class="panel-title" id="result-count">—</span>
+      <div class="view-toggle" id="view-toggle" style="display:none">
+        <button class="view-btn active" id="btn-view-list">☰</button>
+        <button class="view-btn" id="btn-view-grid">⊞</button>
+      </div>
+    </div>
+    <div class="content" id="content"><div class="loading">Chargement…</div></div>
+  </main>
+
+  <!-- Detail panel -->
+  <div class="detail-panel" id="detail-panel">
+    <button class="detail-close" id="detail-close">✕</button>
+    <div class="detail-body">
+      <div class="detail-type" id="detail-type">Autre</div>
+      <div class="detail-filename" id="detail-title">—</div>
+      <div class="detail-path" id="detail-path">—</div>
+      <div class="detail-meta-grid">
+        <div class="detail-meta-item"><div class="detail-meta-label">Infos</div><div class="detail-meta-value" id="detail-meta">—</div></div>
+      </div>
+      <button class="btn-favori" id="btn-favori">☆ Ajouter aux favoris</button>
+      <div class="detail-section-title" style="margin-top:16px">Tags personnels</div>
+      <div class="detail-tags-manuels" id="detail-tags-manuels"></div>
+      <div class="detail-section-title" style="margin-top:16px">Note personnelle</div>
+      <textarea class="detail-note" id="detail-note" placeholder="Écris une note…" rows="3"></textarea>
+      <div class="detail-section-title" style="margin-top:16px">Résumé Ollama</div>
+      <div class="detail-resume" id="detail-resume">Pas encore analysé.</div>
+      <div class="detail-section-title">Tags Ollama</div>
+      <div class="detail-tags" id="detail-tags"></div>
+      <button class="btn-fix-serie" id="btn-fix-serie">✎ Corriger série/saison/épisode</button>
+      <button class="btn-autotag" id="btn-autotag">✦ Auto-tag IA</button>
+      <button class="btn-open-file" id="btn-open-file">▶ Ouvrir le fichier</button>
+      <button class="btn-analyse" id="btn-ollama">Analyser avec Ollama</button>
+    </div>
+  </div>
+
+  <!-- Serie panel -->
+  <div class="serie-panel" id="serie-panel">
+    <div class="serie-panel-header"><h2 class="serie-panel-title" id="serie-panel-title">—</h2><button class="detail-close" id="serie-panel-close">✕</button></div>
+    <div class="serie-panel-body" id="serie-panel-body"></div>
+  </div>
+
+  <!-- Tag Modal -->
+  <div class="tag-overlay" id="tag-overlay"></div>
+  <div class="tag-modal" id="tag-modal">
+    <div class="tag-modal-title">Ajouter un tag</div>
+    <input type="text" class="tag-input" id="tag-input" placeholder="Nom du tag…" maxlength="30" autocomplete="off"/>
+    <div class="tag-suggestions" id="tag-suggestions"></div>
+    <div class="tag-actions">
+      <button class="pin-btn-cancel" id="tag-cancel">Annuler</button>
+      <button class="pin-btn-confirm" id="tag-confirm">Ajouter</button>
+    </div>
+  </div>
+
+  <!-- PIN Modal -->
+  <div class="pin-overlay" id="pin-overlay"></div>
+  <div class="pin-modal" id="pin-modal" data-mode="unlock">
+    <div class="pin-modal-icon">🔒</div>
+    <div class="pin-title" id="pin-title">Accès privé</div>
+    <div class="pin-subtitle" id="pin-subtitle">Entrez votre PIN</div>
+    <input type="password" class="pin-input" id="pin-input" placeholder="PIN…" maxlength="20" autocomplete="off"/>
+    <div class="pin-error" id="pin-error"></div>
+    <div class="pin-actions">
+      <button class="pin-btn-cancel" id="pin-cancel">Annuler</button>
+      <button class="pin-btn-confirm" id="pin-confirm">Confirmer</button>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="settings-overlay" id="settings-overlay"></div>
+  <div class="settings-modal" id="settings-modal">
+    <div class="settings-modal-header">
+      <span class="settings-modal-title">⚙ Paramètres</span>
+      <button class="settings-modal-close" id="settings-close">✕</button>
+    </div>
+    <div class="settings-tabs">
+      <button class="settings-tab-btn active" data-tab="general">Général</button>
+      <button class="settings-tab-btn" data-tab="private">🔒 Privé</button>
+      <button class="settings-tab-btn" data-tab="backup">💾 Backup</button>
+      <button class="settings-tab-btn" data-tab="api">APIs</button>
+      <button class="settings-tab-btn" data-tab="interface">Interface</button>
+    </div>
+    <div class="settings-modal-body">
+
+      <!-- Général -->
+      <div class="settings-tab-panel" data-panel="general">
+        <div class="settings-group">
+          <div class="settings-group-title">Modèle Ollama</div>
+          <div class="settings-model-current"><span class="settings-model-dot"></span><span id="current-model-name">Chargement…</span></div>
+          <div class="settings-select-wrap"><select class="settings-select" id="model-select"><option>Chargement…</option></select></div>
+          <button class="settings-apply-btn" id="model-apply">Appliquer</button>
+          <div class="settings-feedback" id="settings-feedback"></div>
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-group">
+          <div class="settings-group-title">Analyse batch PDFs</div>
+          <div class="batch-status-row" id="batch-status">Chargement…</div>
+          <button class="settings-apply-btn" id="btn-batch" style="margin-top:8px">Lancer batch</button>
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-group">
+          <div class="settings-group-title">Fermeture de l'application</div>
+          <div class="settings-group-desc">Coupe aussi le backend Python quand tu fermes la fenêtre principale.</div>
+          <div class="backup-toggle-row">
+            <label class="toggle-label"><input type="checkbox" id="backend-stop-on-close"/> Arrêter aussi le backend à la fermeture</label>
+          </div>
+          <div class="settings-info-row" id="backend-stop-on-close-status" style="margin-top:10px">Chargement…</div>
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-group">
+          <div class="settings-group-title">Auto-tag IA d'un dossier</div>
+          <div class="settings-group-desc">Choisis un dossier déjà indexé puis laisse Ollama générer des tags à partir des noms de fichiers.</div>
+          <div class="settings-info-row" id="autotag-folder-display">Aucun dossier sélectionné</div>
+          <div class="autotag-folder-options">
+            <label class="autotag-folder-check"><input type="checkbox" id="autotag-only-untagged" checked> Seulement les fichiers sans tags</label>
+            <label class="autotag-folder-check"><input type="checkbox" id="autotag-overwrite"> Écraser les tags existants</label>
+          </div>
+          <div class="autotag-folder-actions">
+            <select class="settings-select autotag-folder-limit" id="autotag-folder-limit">
+              <option value="50">50 fichiers</option>
+              <option value="100">100 fichiers</option>
+              <option value="200" selected>200 fichiers</option>
+              <option value="500">500 fichiers</option>
+            </select>
+            <button class="settings-add-folder-btn" id="btn-autotag-folder-pick">Choisir le dossier</button>
+          </div>
+          <div class="autotag-folder-actions">
+            <button class="settings-apply-btn" id="btn-autotag-folder-start">Lancer l'auto-tag</button>
+            <button class="settings-clear-btn" id="btn-autotag-folder-stop">Stop</button>
+          </div>
+          <div class="batch-status-row autotag-folder-status" id="autotag-folder-status">Prêt.</div>
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-group">
+          <div class="settings-group-title">Dossiers surveillés</div>
+          <div class="settings-folders-list" id="folders-list"><div class="settings-folder-loading">Chargement…</div></div>
+          <button class="settings-add-folder-btn" id="btn-add-folder">+ Ajouter</button>
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-group">
+          <div class="settings-group-title">Organisation du menu</div>
+          <div class="settings-group-desc">Maintiens un élément du menu de gauche puis fais-le glisser pour réorganiser l’ordre.</div>
+          <button class="settings-clear-btn" id="btn-reset-nav-order" style="margin-top:10px">Réinitialiser l’ordre du menu</button>
+        </div>
+      </div>
+
+      <!-- Privé -->
+      <div class="settings-tab-panel" data-panel="private" style="display:none">
+        <div class="settings-group">
+          <div class="settings-group-title">Protection PIN</div>
+          <div class="pin-config-status-row"><span id="pin-config-status">Chargement…</span></div>
+          <div class="pin-config-btns">
+            <button class="settings-apply-btn" id="btn-set-pin" style="display:none">Définir un PIN</button>
+            <button class="settings-apply-btn" id="btn-change-pin" style="display:none">Changer le PIN</button>
+            <button class="settings-clear-btn" id="btn-delete-pin" style="display:none">Supprimer</button>
+          </div>
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-group">
+          <div class="settings-group-title">Verrouillage automatique</div>
+          <select class="settings-select" id="timeout-select">
+            <option value="1">1 minute</option>
+            <option value="5" selected>5 minutes</option>
+            <option value="15">15 minutes</option>
+            <option value="30">30 minutes</option>
+            <option value="60">1 heure</option>
+            <option value="0">Jamais</option>
+          </select>
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-group">
+          <div class="settings-group-title">Dossiers privés</div>
+          <div class="settings-group-desc">Fichiers masqués dans toutes les vues sauf espace privé déverrouillé</div>
+          <div class="settings-folders-list" id="private-folders-list"><div class="settings-folder-loading">Chargement…</div></div>
+          <button class="settings-add-folder-btn" id="btn-add-private-folder">+ Ajouter un dossier privé</button>
+        </div>
+      </div>
+
+      <!-- Backup -->
+      <div class="settings-tab-panel" data-panel="backup" style="display:none">
+        <div class="settings-group">
+          <div class="settings-group-title">Sauvegarde automatique</div>
+          <div class="settings-group-desc">La base de données est sauvegardée automatiquement toutes les 24h</div>
+          <div class="backup-toggle-row">
+            <label class="toggle-label"><input type="checkbox" id="backup-enabled" checked/> Activer le backup automatique</label>
+          </div>
+          <div class="settings-group-desc" style="margin-top:12px">Nombre de backups à conserver</div>
+          <select class="settings-select" id="backup-keep" style="margin-bottom:12px">
+            <option value="3">3 derniers</option>
+            <option value="7" selected>7 derniers</option>
+            <option value="14">14 derniers</option>
+            <option value="30">30 derniers</option>
+          </select>
+          <div class="settings-group-desc">Dossier de sauvegarde</div>
+          <div class="settings-info-row" id="backup-dir-display">Documents\media_indexer_backups</div>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <button class="settings-apply-btn" id="btn-backup-now" style="flex:1">Sauvegarder maintenant</button>
+            <button class="settings-apply-btn" id="btn-backup-save-settings" style="flex:1;background:var(--surface2);color:var(--text);border:1px solid var(--border2)">Sauvegarder les options</button>
+          </div>
+          <div class="settings-feedback" id="backup-feedback"></div>
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-group">
+          <div class="settings-group-title">Backups disponibles</div>
+          <div class="settings-folders-list" id="backup-list" style="max-height:240px;overflow-y:auto"><div class="settings-folder-loading">Chargement…</div></div>
+        </div>
+      </div>
+
+      <!-- APIs -->
+      <div class="settings-tab-panel" data-panel="api" style="display:none">
+        <div class="settings-group">
+          <div class="settings-group-title">Connexion Ollama</div>
+          <div class="settings-group-desc">Vérifie si Ollama répond localement et mesure le temps de réponse.</div>
+          <div class="api-status-row">
+            <span class="api-status-dot" id="ollama-status-dot"></span>
+            <div class="api-status-main">
+              <div class="api-status-title" id="ollama-status">Chargement…</div>
+              <div class="api-status-sub" id="ollama-status-sub">—</div>
+            </div>
+            <button class="settings-clear-btn" id="btn-test-ollama" type="button">Tester</button>
+          </div>
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-group">
+          <div class="settings-group-title">TMDB</div>
+          <div class="settings-group-desc">Clé gratuite sur <strong>themoviedb.org</strong> → Paramètres → API</div>
+          <div class="tmdb-status-row"><span class="tmdb-dot" id="tmdb-dot"></span><span id="tmdb-status">Chargement…</span></div>
+          <div class="settings-key-wrap">
+            <input type="password" class="settings-key-input" id="tmdb-key-input" placeholder="Clé API TMDB…" autocomplete="off"/>
+            <button class="settings-key-show" id="tmdb-key-toggle" type="button">👁</button>
+          </div>
+          <div class="settings-key-actions">
+            <button class="settings-apply-btn" id="tmdb-key-save">Sauvegarder</button>
+            <button class="settings-clear-btn" id="tmdb-key-clear">Supprimer</button>
+            <button class="settings-clear-btn" id="tmdb-key-test">Tester la clé TMDB</button>
+          </div>
+          <div class="settings-feedback" id="tmdb-feedback"></div>
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-group">
+          <div class="settings-group-title">OMDb</div>
+          <div class="settings-group-desc">Optionnel pour enrichir les films. Clé API depuis <strong>omdbapi.com</strong>.</div>
+          <div class="tmdb-status-row"><span class="tmdb-dot" id="omdb-dot"></span><span id="omdb-status">Non testé</span></div>
+          <div class="settings-key-wrap">
+            <input type="password" class="settings-key-input" id="omdb-key-input" placeholder="Clé API OMDb…" autocomplete="off"/>
+            <button class="settings-key-show" id="omdb-key-toggle" type="button">👁</button>
+          </div>
+          <div class="settings-key-actions">
+            <button class="settings-apply-btn" id="omdb-key-save">Sauvegarder</button>
+            <button class="settings-clear-btn" id="omdb-key-clear">Supprimer</button>
+            <button class="settings-clear-btn" id="omdb-key-test">Tester OMDb</button>
+          </div>
+          <div class="settings-feedback" id="omdb-feedback"></div>
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-group">
+          <div class="settings-group-title">AniList</div>
+          <div class="settings-group-desc">API publique pratique pour les animes et mangas. Aucun token nécessaire pour un test simple.</div>
+          <div class="api-status-row compact">
+            <span class="api-status-dot" id="anilist-status-dot"></span>
+            <div class="api-status-main">
+              <div class="api-status-title" id="anilist-status">Non testé</div>
+              <div class="api-status-sub" id="anilist-status-sub">GraphQL public</div>
+            </div>
+            <button class="settings-clear-btn" id="btn-test-anilist" type="button">Tester AniList</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Interface -->
+      <div class="settings-tab-panel" data-panel="interface" style="display:none">
+        <div class="settings-group">
+          <div class="settings-group-title">Organisation de l'interface</div>
+          <div class="settings-group-desc">Réinitialise l'ordre personnalisé des onglets et remets l'interface dans son état par défaut.</div>
+          <button class="settings-apply-btn" id="btn-reset-nav-order">Réinitialiser l'ordre des onglets</button>
+          <div class="settings-feedback" id="interface-feedback"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- Rule Modal -->
+
+
+  <!-- Fix Série Modal -->
+  <div class="fix-serie-overlay" id="fix-serie-overlay"></div>
+  <div class="fix-serie-modal" id="fix-serie-modal">
+    <div class="fix-serie-title">✎ Corriger la détection</div>
+    <div class="fix-serie-filename" id="fix-serie-nom">—</div>
+    <input type="hidden" id="fix-serie-chemin"/>
+    <div class="fix-serie-grid">
+      <div class="fix-serie-field">
+        <label class="rule-form-label">Nom de la série *</label>
+        <input type="text" class="rule-form-input" id="fix-serie-serie" placeholder="Ex: Beastars"/>
+      </div>
+      <div class="fix-serie-field">
+        <label class="rule-form-label">Titre d'affichage</label>
+        <input type="text" class="rule-form-input" id="fix-serie-titre" placeholder="Ex: Beastars"/>
+      </div>
+      <div class="fix-serie-field">
+        <label class="rule-form-label">Saison</label>
+        <input type="number" class="rule-form-input" id="fix-serie-saison" min="1" value="1"/>
+      </div>
+      <div class="fix-serie-field">
+        <label class="rule-form-label">Épisode</label>
+        <input type="number" class="rule-form-input" id="fix-serie-episode" min="1" value="1"/>
+      </div>
+    </div>
+    <div class="pin-actions" style="margin-top:16px">
+      <button class="pin-btn-cancel" id="fix-serie-cancel">Annuler</button>
+      <button class="pin-btn-confirm" id="fix-serie-save">Sauvegarder</button>
+    </div>
+  </div>
+
+  <!-- Regroup Modal -->
+  <div class="regroup-overlay" id="regroup-overlay"></div>
+  <div class="regroup-modal" id="regroup-modal">
+    <div class="regroup-modal-header">
+      <div class="regroup-modal-title" id="regroup-modal-title">Regrouper</div>
+      <button class="detail-close" id="regroup-modal-close">✕</button>
+    </div>
+    <div class="regroup-modal-body">
+      <div class="regroup-info" id="regroup-info"></div>
+      <div class="regroup-dest-section">
+        <label class="rule-form-label">Dossier de destination *</label>
+        <div class="rule-form-row">
+          <input type="text" class="rule-form-input" id="regroup-dest" placeholder="Ex: E:\Séries\Beastars"/>
+          <button class="compare-browse-btn" id="regroup-browse-dest">Parcourir</button>
+        </div>
+      </div>
+      <div class="regroup-options">
+        <label class="rule-form-checkbox"><input type="checkbox" id="regroup-saisons" checked/> Organiser en sous-dossiers Saison 01, Saison 02…</label>
+      </div>
+      <div class="regroup-preview-section" id="regroup-preview-section" style="display:none">
+        <div class="regroup-preview-title">Aperçu du déplacement</div>
+        <div class="regroup-preview-list" id="regroup-preview-list"></div>
+      </div>
+    </div>
+    <div class="regroup-modal-footer">
+      <button class="pin-btn-cancel" id="regroup-preview-btn">👁 Aperçu</button>
+      <button class="pin-btn-confirm" id="regroup-execute-btn">▶ Déplacer les fichiers</button>
+    </div>
+  </div>
+
+  <div class="rule-overlay" id="rule-overlay"></div>
+  <div class="rule-modal" id="rule-modal">
+    <div class="rule-modal-title">Nouvelle règle automatique</div>
+    <div class="rule-form">
+      <label class="rule-form-label">Nom de la règle *</label>
+      <input type="text" class="rule-form-input" id="rule-form-nom" placeholder="Ex: PDFs vers Documents"/>
+
+      <label class="rule-form-label">Dossier source <span class="rule-optional">(vide = tous les dossiers surveillés)</span></label>
+      <div class="rule-form-row">
+        <input type="text" class="rule-form-input" id="rule-form-source" placeholder="Ex: C:\Users\Jean-Pierre\Downloads"/>
+        <button class="compare-browse-btn" id="rule-browse-source">Parcourir</button>
+      </div>
+
+      <label class="rule-form-label">Condition *</label>
+      <div class="rule-form-row">
+        <select class="rule-form-select" id="rule-form-cond-type">
+          <option value="extension">Extension</option>
+          <option value="type">Type de fichier</option>
+          <option value="nom_contient">Nom contient</option>
+        </select>
+        <input type="text" class="rule-form-input" id="rule-form-cond-val" placeholder="Ex: .pdf ou PDF ou beastars"/>
+      </div>
+
+      <label class="rule-form-label">Action *</label>
+      <select class="rule-form-select" id="rule-form-action" style="margin-bottom:12px">
+        <option value="deplacer">Déplacer le fichier</option>
+        <option value="copier">Copier le fichier</option>
+      </select>
+
+      <label class="rule-form-label">Dossier destination *</label>
+      <div class="rule-form-row">
+        <input type="text" class="rule-form-input" id="rule-form-dest" placeholder="Ex: D:\Documents\PDFs"/>
+        <button class="compare-browse-btn" id="rule-browse-dest">Parcourir</button>
+      </div>
+
+      <label class="rule-form-checkbox"><input type="checkbox" id="rule-form-actif" checked/> Règle active</label>
+    </div>
+    <div class="rule-modal-actions">
+      <button class="pin-btn-cancel" id="rule-modal-cancel">Annuler</button>
+      <button class="pin-btn-confirm" id="rule-modal-save">Sauvegarder</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="overlay"></div>
+  <script src="https://unpkg.com/@tauri-apps/api@1/dist/tauri.min.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>
