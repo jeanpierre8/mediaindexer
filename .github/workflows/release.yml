@@ -42,7 +42,7 @@ jobs:
           Copy-Item .\dist\media-indexer-api.exe .\src-tauri\binaries\media-indexer-api-x86_64-pc-windows-msvc.exe -Force
 
       - name: Build and publish Tauri app
-        uses: tauri-apps/tauri-action@v1
+        uses: tauri-apps/tauri-action@v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
