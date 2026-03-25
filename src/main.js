@@ -8,20 +8,6 @@ const NAV_ORDER_KEY = 'mi-nav-order';
 const NAV_LONG_PRESS_MS = 280;
 let DEFAULT_NAV_ORDER = [];
 
-/* ─── Utils ─────────────────────────────────────────────────── */
-const $ = id => document.getElementById(id);
-const fmt = n => { const v = Number(n); if (!isFinite(v)) return '—'; return v >= 1024 ? (v/1024).toFixed(1)+' GB' : v.toFixed(1)+' MB'; };
-
-const readStore = (key, fallback) => {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? JSON.parse(raw) : fallback;
-  } catch(e) { return fallback; }
-};
-const writeStore = (key, value) => {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch(e) {}
-};
-
 const state = {
   tab: 'all',
   disk: 'Tous',
@@ -43,9 +29,21 @@ const state = {
   missingShowIgnored: localStorage.getItem('mi-missing-show-ignored') === '1',
   missingView: localStorage.getItem('mi-missing-view') || 'detailed',
   navDrag: null,
-  autotagFolderPath: readStore('mi-autotag-folder-path', ''),
-  autotagFolderPoll: null,
   backendStopOnClose: localStorage.getItem('mi-backend-stop-on-close') === '1',
+};
+
+/* ─── Utils ─────────────────────────────────────────────────── */
+const $ = id => document.getElementById(id);
+const fmt = n => { const v = Number(n); if (!isFinite(v)) return '—'; return v >= 1024 ? (v/1024).toFixed(1)+' GB' : v.toFixed(1)+' MB'; };
+
+const readStore = (key, fallback) => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch(e) { return fallback; }
+};
+const writeStore = (key, value) => {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch(e) {}
 };
 const missingPrefs = {
   ignoredSeasons: () => readStore('mi-missing-ignored-seasons', {}),
@@ -206,17 +204,86 @@ function loadRuntimeSettingsUi() {
 }
 
 function shutdownBackendOnWindowExit() {
-  if (!state.backendStopOnClose) return;
-  try {
-    fetch(API + '/shutdown', { method: 'POST', keepalive: true });
-  } catch(_) {}
-  try {
-    backendChild?.kill?.();
-  } catch(_) {}
+  if (state.backendStopOnClose) {
+    try { fetch(API + '/shutdown', { method: 'POST', keepalive: true }); } catch(_) {}
+  }
+  try { backendChild?.kill?.(); } catch(_) {}
 }
 
 window.addEventListener('beforeunload', shutdownBackendOnWindowExit);
 window.addEventListener('unload', shutdownBackendOnWindowExit);
+
+
+function setUpdateFeedback(message = '', color = 'var(--muted)') {
+  const el = $('update-feedback');
+  if (!el) return;
+  el.textContent = message;
+  el.style.color = color;
+}
+
+async function checkForAppUpdate({ silent = false } = {}) {
+  try {
+    const updater = window.__TAURI__?.updater;
+    const processApi = window.__TAURI__?.process;
+
+    if (!updater?.checkUpdate || !updater?.installUpdate || !updater?.onUpdaterEvent) {
+      if (!silent) setUpdateFeedback('Updater Tauri indisponible dans cette build.', 'var(--muted)');
+      return false;
+    }
+
+    if (!silent) {
+      setUpdateFeedback('Vérification en cours…', 'var(--muted)');
+      const btn = $('btn-check-update');
+      if (btn) { btn.disabled = true; btn.textContent = 'Vérification…'; }
+    }
+
+    const unlisten = await updater.onUpdaterEvent(({ error, status }) => {
+      if (error) console.error('Updater error:', error);
+      else console.log('Updater status:', status);
+    });
+
+    try {
+      const { shouldUpdate, manifest } = await updater.checkUpdate();
+
+      if (!shouldUpdate) {
+        if (!silent) setUpdateFeedback('Aucune mise à jour disponible.', 'var(--accent2)');
+        return false;
+      }
+
+      const version = manifest?.version ?? 'inconnue';
+      const notes = manifest?.body || manifest?.notes || 'Aucune note de version.';
+      const ok = confirm(
+        `Une nouvelle version ${version} est disponible.\n\n${notes}\n\nInstaller maintenant ?`
+      );
+
+      if (!ok) {
+        if (!silent) setUpdateFeedback('Mise à jour reportée.', 'var(--muted)');
+        return false;
+      }
+
+      if (!silent) setUpdateFeedback('Téléchargement et installation…', 'var(--muted)');
+      await updater.installUpdate();
+
+      try {
+        await processApi?.relaunch?.();
+      } catch (e) {
+        console.warn('Relaunch:', e);
+      }
+
+      return true;
+    } finally {
+      if (typeof unlisten === 'function') unlisten();
+      if (!silent) {
+        const btn = $('btn-check-update');
+        if (btn) { btn.disabled = false; btn.textContent = 'Vérifier les mises à jour'; }
+      }
+    }
+  } catch (e) {
+    console.error('Erreur update:', e);
+    if (!silent) setUpdateFeedback('Impossible de vérifier les mises à jour.', 'var(--danger)');
+    return false;
+  }
+}
 
 /* ─── Modals (class-based) ──────────────────────────────────── */
 function openModal(id, overlayId) {
@@ -276,6 +343,7 @@ async function initApp() {
   setStatus('Prêt');
   await updateCounts();
   render();
+  setTimeout(() => { checkForAppUpdate({ silent: true }); }, 1800);
   setInterval(pollDisks, 4000);
   setInterval(async () => { await updateCounts(); }, 30000);
 }
@@ -619,28 +687,7 @@ function initDetailPanel() {
     }
   });
 
-  $('btn-autotag')?.addEventListener('click', async () => {
-  const file = state.selectedFile;
-  if (!file?.chemin) return;
-  const btn = $('btn-autotag');
-  const previous = btn?.textContent || '✦ Auto-tag IA';
-  if (btn) { btn.textContent = 'Auto-tag…'; btn.disabled = true; }
-  const r = await api('/autotag', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ chemin:file.chemin, nom:file.nom || '', type:file.type || '', serie:file.serie || '' })
-  });
-  if (btn) { btn.disabled = false; btn.textContent = previous; }
-  if (r?.ok) {
-    file.tags = r.tags || '';
-    renderTags(file.tags);
-    setStatus('Tags IA mis à jour');
-  } else {
-    alert(r?.error || "Impossible de générer les tags IA");
-  }
-});
-
-$('detail-note')?.addEventListener('blur', async e => {
+  $('detail-note')?.addEventListener('blur', async e => {
     const f = state.selectedFile;
     if (!f?.chemin) return;
     f.note = e.target.value;
@@ -739,9 +786,184 @@ async function ouvrirFichier(chemin) {
   if (!r?.ok) setStatus('Impossible d\'ouvrir le fichier');
 }
 
+
+function getParentFolderPath(filePath = '') {
+  const clean = String(filePath || '').replace(/[\/]+$/, '');
+  const slash = Math.max(clean.lastIndexOf('\\'), clean.lastIndexOf('/'));
+  return slash >= 0 ? clean.slice(0, slash) : clean;
+}
+
+function getDiskLabel(filePath = '') {
+  const m = String(filePath || '').match(/^[A-Za-z]:/);
+  return m ? m[0].toUpperCase() : 'Autre';
+}
+
+function summarizeSeasons(seasons = []) {
+  const nums = [...new Set((seasons || []).map(n => Number(n)).filter(Number.isFinite))].sort((a, b) => a - b);
+  if (!nums.length) return 'Saisons inconnues';
+  if (nums.length === 1) return `S${nums[0]}`;
+  return nums.length <= 4 ? nums.map(n => `S${n}`).join(', ') : `S${nums[0]}–S${nums[nums.length - 1]}`;
+}
+
+async function fetchSerieFolders(serieName) {
+  const detail = await api('/series/' + encodeURIComponent(serieName) + '/detail');
+  const folderMap = new Map();
+  for (const saison of detail?.saisons || []) {
+    for (const ep of saison.episodes || []) {
+      const folder = getParentFolderPath(ep.chemin);
+      if (!folder) continue;
+      if (!folderMap.has(folder)) {
+        folderMap.set(folder, {
+          path: folder,
+          disk: ep.disque || getDiskLabel(folder),
+          count: 0,
+          seasons: new Set(),
+        });
+      }
+      const item = folderMap.get(folder);
+      item.count += 1;
+      item.seasons.add(Number(saison.saison));
+    }
+  }
+  return [...folderMap.values()]
+    .map(item => ({ ...item, seasons: [...item.seasons].sort((a, b) => a - b) }))
+    .sort((a, b) => a.disk.localeCompare(b.disk, 'fr') || b.count - a.count || a.path.localeCompare(b.path, 'fr'));
+}
+
+async function ouvrirDossier(chemin) {
+  const r = await api('/ouvrir', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ chemin }) });
+  if (r?.ok) setStatus('Dossier ouvert');
+  else setStatus("Impossible d'ouvrir le dossier");
+}
+
+function closeSerieFoldersModal() {
+  closeModal('serie-folders-modal', 'serie-folders-overlay');
+}
+
+function ensureSerieFoldersModal() {
+  if ($('serie-folders-modal') && $('serie-folders-overlay')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'serie-folders-overlay';
+  overlay.className = 'series-folders-overlay';
+  overlay.addEventListener('click', closeSerieFoldersModal);
+
+  const modal = document.createElement('div');
+  modal.id = 'serie-folders-modal';
+  modal.className = 'series-folders-modal';
+  modal.innerHTML = `
+    <div class="series-folders-header">
+      <div>
+        <div class="series-folders-title" id="serie-folders-title">Dossiers de la série</div>
+        <div class="series-folders-subtitle" id="serie-folders-subtitle">Choisis le dossier à ouvrir</div>
+      </div>
+      <button class="detail-close" id="serie-folders-close">✕</button>
+    </div>
+    <div class="series-folders-body" id="serie-folders-body"></div>
+    <div class="series-folders-footer">
+      <button class="pin-btn-cancel" id="serie-folders-cancel">Fermer</button>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  document.body.appendChild(modal);
+  $('serie-folders-close')?.addEventListener('click', closeSerieFoldersModal);
+  $('serie-folders-cancel')?.addEventListener('click', closeSerieFoldersModal);
+}
+
+function ensureSeriePanelFoldersButton() {
+  const header = document.querySelector('.serie-panel-header');
+  const closeBtn = $('serie-panel-close');
+  if (!header || !closeBtn) return null;
+  let btn = $('serie-panel-open-folders');
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.id = 'serie-panel-open-folders';
+    btn.className = 'serie-open-folders-btn panel';
+    btn.type = 'button';
+    btn.textContent = '📂 Dossiers';
+    header.insertBefore(btn, closeBtn);
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      if (btn.dataset.serie) await handleOpenSerieFolders(btn.dataset.serie, btn);
+    });
+  }
+  return btn;
+}
+
+function showSerieFoldersModal(serieName, folders) {
+  ensureSerieFoldersModal();
+  const title = $('serie-folders-title');
+  const subtitle = $('serie-folders-subtitle');
+  const body = $('serie-folders-body');
+  if (!body) return;
+
+  if (title) title.textContent = `Dossiers · ${serieName}`;
+  if (subtitle) subtitle.textContent = `${folders.length} dossier(s) trouvé(s) — choisis celui à ouvrir.`;
+
+  const groups = folders.reduce((acc, folder) => {
+    const key = folder.disk || getDiskLabel(folder.path);
+    if (!acc.has(key)) acc.set(key, []);
+    acc.get(key).push(folder);
+    return acc;
+  }, new Map());
+
+  body.innerHTML = [...groups.entries()].map(([disk, items]) => `
+    <div class="series-folder-group">
+      <div class="series-folder-group-title">${escapeHtml(disk)}</div>
+      <div class="series-folder-list">${items.map(folder => `
+        <button class="series-folder-item" type="button" data-path="${escapeHtml(folder.path)}">
+          <span class="series-folder-item-top">
+            <span class="series-folder-item-name">${escapeHtml(folder.path.split('\\').pop() || folder.path)}</span>
+            <span class="series-folder-item-count">${folder.count} ép.</span>
+          </span>
+          <span class="series-folder-item-path" title="${escapeHtml(folder.path)}">${escapeHtml(folder.path)}</span>
+          <span class="series-folder-item-seasons">${escapeHtml(summarizeSeasons(folder.seasons))}</span>
+        </button>`).join('')}</div>
+    </div>`).join('');
+
+  body.querySelectorAll('.series-folder-item').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await ouvrirDossier(btn.dataset.path);
+      closeSerieFoldersModal();
+    });
+  });
+
+  openModal('serie-folders-modal', 'serie-folders-overlay');
+}
+
+async function handleOpenSerieFolders(serieName, triggerBtn = null) {
+  const btn = triggerBtn;
+  const previous = btn?.textContent;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = btn.classList.contains('panel') ? '…' : '…';
+  }
+  try {
+    const folders = await fetchSerieFolders(serieName);
+    if (!folders.length) {
+      setStatus('Aucun dossier trouvé pour cette série');
+      return;
+    }
+    if (folders.length === 1) {
+      await ouvrirDossier(folders[0].path);
+      return;
+    }
+    showSerieFoldersModal(serieName, folders);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = previous || '📂';
+    }
+  }
+}
+
 /* ─── Serie panel ───────────────────────────────────────────── */
 async function openSeriePanel(serieName) {
   $('serie-panel-title').textContent = serieName;
+  const foldersBtn = ensureSeriePanelFoldersButton();
+  if (foldersBtn) {
+    foldersBtn.dataset.serie = serieName;
+    foldersBtn.title = `Ouvrir les dossiers de ${serieName}`;
+  }
   $('serie-panel-body').innerHTML = '<div class="serie-accordion-loading">Chargement…</div>';
   $('serie-panel').classList.add('open');
   $('overlay').classList.add('show');
@@ -791,7 +1013,6 @@ async function render() {
     default:          await renderFiles(content); break;
   }
 }
-
 
 
 const FILE_TABLE_MIN_WIDTH = 90;
@@ -942,7 +1163,7 @@ async function renderFiles(content) {
     const ep = (f.saison && f.episode) ? `S${String(f.saison).padStart(2,'0')}E${String(f.episode).padStart(3,'0')}` : '';
     const tagsHtml = f.tags_manuels ? f.tags_manuels.split(',').filter(t=>t.trim()).map(t=>`<span class="tag-manuel-pill-sm">${t.trim()}</span>`).join('') : '<span class="no-tag">—</span>';
     tr.innerHTML = `
-      <td><div class="file-name ${isPriv?'file-private':''}" title="${f.nom}">${f.favori?'⭐ ':''}${isPriv?'🔒 ':''}${f.nom}</div></td>
+      <td><div class="file-name ${isPriv?'file-private':''}">${f.favori?'⭐ ':''}${isPriv?'🔒 ':''}${f.nom}</div></td>
       <td><span class="type-badge type-${f.type}">${f.type}</span></td>
       <td>${f.serie?`<div class="file-serie">${f.serie}</div>`:''}${ep?`<span class="ep-badge">${ep}</span>`:''}</td>
       <td><span class="disk-tag">${f.disque}:</span></td>
@@ -958,8 +1179,8 @@ async function renderFiles(content) {
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
-  attachResizableColumns(table, cols, 'main');
   const wrap = document.createElement('div'); wrap.className = 'table-wrap'; wrap.appendChild(table);
+  attachResizableColumns(table, cols, 'files-main');
   content.innerHTML = ''; content.appendChild(wrap);
 }
 
@@ -977,8 +1198,17 @@ function renderSeriesGrid(data, content) {
   data.forEach(s => {
     const card = document.createElement('div'); card.className = 'serie-grid-card';
     const seasons = s.saison_min === s.saison_max ? `S${s.saison_min}` : `S${s.saison_min}–S${s.saison_max}`;
-    card.innerHTML = `<div class="serie-grid-name">${s.serie}</div><div class="serie-grid-meta"><span class="serie-tag accent">${s.nb} ép.</span><span class="serie-tag">${seasons}</span><span class="serie-tag">${s.disques}</span></div>`;
+    card.innerHTML = `
+      <div class="serie-grid-top">
+        <div class="serie-grid-name">${s.serie}</div>
+        <button class="serie-open-folders-btn" type="button" data-serie="${escapeHtml(s.serie)}" title="Ouvrir les dossiers de la série">📂</button>
+      </div>
+      <div class="serie-grid-meta"><span class="serie-tag accent">${s.nb} ép.</span><span class="serie-tag">${seasons}</span><span class="serie-tag">${s.disques}</span></div>`;
     card.addEventListener('click', () => openSeriePanel(s.serie));
+    card.querySelector('.serie-open-folders-btn')?.addEventListener('click', async e => {
+      e.stopPropagation();
+      await handleOpenSerieFolders(s.serie, e.currentTarget);
+    });
     wrap.appendChild(card);
   });
   content.innerHTML = ''; content.appendChild(wrap);
@@ -992,7 +1222,7 @@ function renderSeriesAccordion(data, content) {
     card.innerHTML = `
       <div class="serie-accordion-header" data-serie="${s.serie}">
         <div class="serie-accordion-left"><span class="serie-accordion-arrow">▶</span><span class="serie-accordion-name">${s.serie}</span></div>
-        <div class="serie-accordion-right"><span class="serie-accordion-meta">${s.nb} ép. · ${seasons}</span><span class="serie-accordion-disks">${s.disques}</span></div>
+        <div class="serie-accordion-right"><span class="serie-accordion-meta">${s.nb} ép. · ${seasons}</span><span class="serie-accordion-disks">${s.disques}</span><button class="serie-open-folders-btn" type="button" data-serie="${escapeHtml(s.serie)}" title="Ouvrir les dossiers de la série">📂</button></div>
       </div>
       <div class="serie-accordion-body" style="display:none"></div>`;
     wrap.appendChild(card);
@@ -1001,6 +1231,10 @@ function renderSeriesAccordion(data, content) {
       const arrow = card.querySelector('.serie-accordion-arrow');
       if (body.style.display !== 'none') { body.style.display = 'none'; arrow.textContent = '▶'; }
       else { body.style.display = 'block'; arrow.textContent = '▼'; body.innerHTML = '<div class="serie-accordion-loading">Chargement…</div>'; await loadSerieDetail(s.serie, body); }
+    });
+    card.querySelector('.serie-open-folders-btn')?.addEventListener('click', async e => {
+      e.stopPropagation();
+      await handleOpenSerieFolders(s.serie, e.currentTarget);
     });
   });
   content.innerHTML = ''; content.appendChild(wrap);
@@ -1517,37 +1751,26 @@ async function renderPrivate(content) {
 }
 
 function buildFileTableEl(data) {
-  const table = document.createElement('table');
-  table.className = 'file-table';
+  const table = document.createElement('table'); table.className = 'file-table';
+  table.innerHTML = `<thead><tr><th>Fichier</th><th>Type</th><th>Disque</th><th>Qualité</th><th style="text-align:right">Taille</th><th>Date</th></tr></thead>`;
   const cols = [
     { key:'nom', label:'Fichier', width: 420, minWidth: 220 },
     { key:'type', label:'Type', width: 120, minWidth: 90 },
     { key:'disque', label:'Disque', width: 110, minWidth: 90 },
     { key:'qualite', label:'Qualité', width: 140, minWidth: 100 },
-    { key:'taille', label:'Taille', width: 120, minWidth: 90, align:'right' },
-    { key:'date', label:'Date', width: 130, minWidth: 100 },
+    { key:'taille', label:'Taille', width: 120, minWidth: 90 },
+    { key:'date', label:'Date', width: 130, minWidth: 100 }
   ];
-  const thead = document.createElement('thead');
-  const trHead = document.createElement('tr');
-  cols.forEach(col => {
-    const th = document.createElement('th');
-    th.textContent = col.label;
-    if (col.align) th.style.textAlign = col.align;
-    trHead.appendChild(th);
-  });
-  thead.appendChild(trHead);
-  table.appendChild(thead);
-
   const tbody = document.createElement('tbody');
   data.forEach(f => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td><div class="file-name" title="${f.nom}">${f.nom}</div></td><td><span class="type-badge type-${f.type}">${f.type}</span></td><td><span class="disk-tag">${f.disque}:</span></td><td>${f.qualite?`<span class="qualite-badge q-${f.qualite}">${f.qualite}</span>`:'—'}</td><td class="size-cell">${fmt(f.taille_mb)}</td><td class="date-cell">${(f.date_scan||'').substring(0,10)}</td>`;
+    tr.innerHTML = `<td><div class="file-name" title="${escapeHtml(f.nom || '')}">${f.nom}</div></td><td><span class="type-badge type-${f.type}">${f.type}</span></td><td><span class="disk-tag">${f.disque}:</span></td><td>${f.qualite?`<span class="qualite-badge q-${f.qualite}">${f.qualite}</span>`:'—'}</td><td class="size-cell">${fmt(f.taille_mb)}</td><td class="date-cell">${(f.date_scan||'').substring(0,10)}</td>`;
     tr.style.cursor = 'pointer';
     tr.addEventListener('click', () => openDetail(f));
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
-  attachResizableColumns(table, cols, 'private');
+  attachResizableColumns(table, cols, 'files-private');
   return table;
 }
 
@@ -1882,10 +2105,13 @@ function initSettings() {
   });
 }
 
+$('backend-stop-on-close')?.addEventListener('change', e => setBackendStopOnClosePreference(e.target.checked));
+$('btn-check-update')?.addEventListener('click', () => checkForAppUpdate({ silent: false }));
+
 function switchSettingsTab(tab) {
   document.querySelectorAll('.settings-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   document.querySelectorAll('.settings-tab-panel').forEach(p => p.style.display = p.dataset.panel === tab ? 'block' : 'none');
-  if (tab === 'general') { loadModels(); loadWatchedFolders(); loadBatchStatus(); loadRuntimeSettingsUi(); loadAutoTagFolderUi(); }
+  if (tab === 'general') { loadModels(); loadWatchedFolders(); loadBatchStatus(); loadRuntimeSettingsUi(); }
   if (tab === 'private') { loadPinStatus(); loadPrivateFoldersList(); loadPrivateTimeout(); }
   if (tab === 'backup')  { loadBackupSettings(); loadBackupList(); }
   if (tab === 'api')     loadApiConfig();
@@ -1954,95 +2180,30 @@ async function loadBackupList(){const r=await api('/backup/list');const list=$('
 $('btn-backup-now')?.addEventListener('click',async()=>{if($('btn-backup-now')){$('btn-backup-now').textContent='Sauvegarde…';$('btn-backup-now').disabled=true;}const r=await api('/backup/now',{method:'POST'});if($('btn-backup-now')){$('btn-backup-now').disabled=false;$('btn-backup-now').textContent='Sauvegarder maintenant';}if(r?.ok){setStatus('Backup créé !');if($('backup-feedback')){$('backup-feedback').textContent='✓ Backup créé';setTimeout(()=>{if($('backup-feedback'))$('backup-feedback').textContent='';},4000);}await loadBackupList();}else if($('backup-feedback')){$('backup-feedback').textContent='✗ '+(r?.error||'Erreur');}});
 $('btn-backup-save-settings')?.addEventListener('click',async()=>{const c=await api('/config');if(!c)return;await api('/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tmdb_key:c.tmdb_key||'',private_timeout:c.private_timeout||5,backup_enabled:$('backup-enabled')?.checked!==false,backup_keep:parseInt($('backup-keep')?.value)||7,backup_dir:c.backup_dir||''})});if($('backup-feedback')){$('backup-feedback').textContent='✓ Options sauvegardées';setTimeout(()=>{if($('backup-feedback'))$('backup-feedback').textContent='';},3000);}});
 
-function renderAutoTagFolderStatus(r){
-  const el = $('autotag-folder-status');
-  if(!el) return;
-  if(!r){ el.textContent = 'Statut indisponible'; return; }
-  if(!r.total){ el.textContent = 'Prêt.'; return; }
-  const base = `${r.processed||0} / ${r.total||0} · ${r.tagged||0} taggé(s) · ${r.skipped||0} ignoré(s) · ${r.errors||0} erreur(s)`;
-  const current = r.current ? ` · ${r.current}` : '';
-  el.textContent = (r.running ? 'En cours — ' : (r.done ? 'Terminé — ' : 'Prêt — ')) + base + current;
-}
-function stopAutoTagFolderPolling(){ if(state.autotagFolderPoll){ clearInterval(state.autotagFolderPoll); state.autotagFolderPoll=null; } }
-function startAutoTagFolderPolling(){
-  stopAutoTagFolderPolling();
-  state.autotagFolderPoll = setInterval(async ()=>{
-    const r = await api('/autotag/folder/status');
-    renderAutoTagFolderStatus(r);
-    if(!r?.running){ stopAutoTagFolderPolling(); }
-  }, 1500);
-}
-async function loadAutoTagFolderUi(){
-  if($('autotag-folder-display')) $('autotag-folder-display').textContent = state.autotagFolderPath || 'Aucun dossier sélectionné';
-  if($('autotag-only-untagged')) $('autotag-only-untagged').checked = readStore('mi-autotag-only-untagged', true);
-  if($('autotag-overwrite')) $('autotag-overwrite').checked = readStore('mi-autotag-overwrite', false);
-  if($('autotag-folder-limit')) $('autotag-folder-limit').value = String(readStore('mi-autotag-folder-limit', 200));
-  const r = await api('/autotag/folder/status');
-  renderAutoTagFolderStatus(r);
-  if(r?.running) startAutoTagFolderPolling();
-}
+/* ─── API config ── */
+async function loadApiConfig(){const r=await api('/config');if(!r)return;const input=$('tmdb-key-input');if(r.tmdb_key_set){if(input){input.value='••••••••••••••••••••••••';input.dataset.set='true';}if($('tmdb-status')){$('tmdb-status').textContent='✓ Clé configurée';$('tmdb-status').style.color='var(--accent2)';}}else{if(input){input.value='';input.dataset.set='false';}if($('tmdb-status')){$('tmdb-status').textContent='Aucune clé';$('tmdb-status').style.color='var(--muted)';}}await testOllamaConnection();}
+$('tmdb-key-input')?.addEventListener('focus',function(){if(this.dataset.set==='true'){this.value='';this.dataset.set='false';}});
+$('tmdb-key-save')?.addEventListener('click',async()=>{const key=$('tmdb-key-input')?.value.trim();if(!key)return;const c=await api('/config');await api('/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tmdb_key:key,private_timeout:c?.private_timeout||5,backup_enabled:c?.backup_enabled!==false,backup_keep:c?.backup_keep||7,backup_dir:c?.backup_dir||''})});if($('tmdb-status')){$('tmdb-status').textContent='✓ Clé configurée';$('tmdb-status').style.color='var(--accent2)';}if($('tmdb-key-input')){$('tmdb-key-input').value='••••••••••••••••••••••••';$('tmdb-key-input').dataset.set='true';}});
+$('tmdb-key-clear')?.addEventListener('click',async()=>{if(!confirm('Supprimer la clé TMDB ?'))return;const c=await api('/config');await api('/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tmdb_key:'',private_timeout:c?.private_timeout||5,backup_enabled:c?.backup_enabled!==false,backup_keep:c?.backup_keep||7,backup_dir:c?.backup_dir||''})});if($('tmdb-key-input')){$('tmdb-key-input').value='';$('tmdb-key-input').dataset.set='false';}if($('tmdb-status')){$('tmdb-status').textContent='Aucune clé';$('tmdb-status').style.color='var(--muted)';}});
 async function testOllamaConnection(){
   const status = $('ollama-status'), sub = $('ollama-status-sub'), dot = $('ollama-status-dot');
   if(status) status.textContent = 'Chargement…';
   if(sub) sub.textContent = 'Test de connexion local';
+  if(dot) dot.className = 'api-status-dot';
   const t0 = performance.now();
   const r = await api('/models');
   const dt = Math.round(performance.now() - t0);
   if(r?.models?.length){
     if(status) status.textContent = 'Ollama connecté';
     if(sub) sub.textContent = `${r.models.length} modèle(s) · ${dt} ms · courant : ${r.current || '—'}`;
-    if(dot) dot.style.background = 'var(--accent2)';
+    if(dot) dot.className = 'api-status-dot ok';
   } else {
     if(status) status.textContent = 'Ollama indisponible';
     if(sub) sub.textContent = 'Aucun modèle détecté';
-    if(dot) dot.style.background = 'var(--danger)';
+    if(dot) dot.className = 'api-status-dot err';
   }
 }
-$('btn-autotag-folder-pick')?.addEventListener('click', async ()=>{
-  const folder = await pickFolder('Dossier à auto-tagger');
-  if(!folder) return;
-  state.autotagFolderPath = folder;
-  writeStore('mi-autotag-folder-path', folder);
-  if($('autotag-folder-display')) $('autotag-folder-display').textContent = folder;
-});
-$('btn-autotag-folder-start')?.addEventListener('click', async ()=>{
-  const folder = state.autotagFolderPath;
-  if(!folder){ alert("Choisis d\'abord un dossier."); return; }
-  const limit = parseInt($('autotag-folder-limit')?.value || '200', 10);
-  const onlyUntagged = !!$('autotag-only-untagged')?.checked;
-  const overwrite = !!$('autotag-overwrite')?.checked;
-  writeStore('mi-autotag-folder-limit', limit);
-  writeStore('mi-autotag-only-untagged', onlyUntagged);
-  writeStore('mi-autotag-overwrite', overwrite);
-  const btn = $('btn-autotag-folder-start');
-  if(btn){ btn.disabled = true; btn.textContent = 'Lancement…'; }
-  const r = await api('/autotag/folder/start', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ folder, limit, only_untagged: onlyUntagged, overwrite }) });
-  if(btn){ btn.disabled = false; btn.textContent = "Lancer l'auto-tag"; }
-  if(r?.ok){
-    setStatus(r.started ? `Auto-tag lancé (${r.count})` : 'Aucun fichier à traiter');
-    const status = await api('/autotag/folder/status');
-    renderAutoTagFolderStatus(status);
-    if(status?.running) startAutoTagFolderPolling();
-  } else {
-    alert(r?.error || "Impossible de lancer l\'auto-tag");
-  }
-});
-$('btn-autotag-folder-stop')?.addEventListener('click', async ()=>{
-  await api('/autotag/folder/stop', { method:'POST' });
-  stopAutoTagFolderPolling();
-  const status = await api('/autotag/folder/status');
-  renderAutoTagFolderStatus(status);
-});
-$('backend-stop-on-close')?.addEventListener('change', e => {
-  setBackendStopOnClosePreference(!!e.target.checked);
-});
 $('btn-test-ollama')?.addEventListener('click', testOllamaConnection);
-
-/* ─── API config ── */
-async function loadApiConfig(){const r=await api('/config');if(r){const input=$('tmdb-key-input');if(r.tmdb_key_set){if(input){input.value='••••••••••••••••••••••••';input.dataset.set='true';}if($('tmdb-status')){$('tmdb-status').textContent='✓ Clé configurée';$('tmdb-status').style.color='var(--accent2)';}}else{if(input){input.value='';input.dataset.set='false';}if($('tmdb-status')){$('tmdb-status').textContent='Aucune clé';$('tmdb-status').style.color='var(--muted)';}}}await testOllamaConnection();}
-$('tmdb-key-input')?.addEventListener('focus',function(){if(this.dataset.set==='true'){this.value='';this.dataset.set='false';}});
-$('tmdb-key-save')?.addEventListener('click',async()=>{const key=$('tmdb-key-input')?.value.trim();if(!key)return;const c=await api('/config');await api('/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tmdb_key:key,private_timeout:c?.private_timeout||5,backup_enabled:c?.backup_enabled!==false,backup_keep:c?.backup_keep||7,backup_dir:c?.backup_dir||''})});if($('tmdb-status')){$('tmdb-status').textContent='✓ Clé configurée';$('tmdb-status').style.color='var(--accent2)';}if($('tmdb-key-input')){$('tmdb-key-input').value='••••••••••••••••••••••••';$('tmdb-key-input').dataset.set='true';}});
-$('tmdb-key-clear')?.addEventListener('click',async()=>{if(!confirm('Supprimer la clé TMDB ?'))return;const c=await api('/config');await api('/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tmdb_key:'',private_timeout:c?.private_timeout||5,backup_enabled:c?.backup_enabled!==false,backup_keep:c?.backup_keep||7,backup_dir:c?.backup_dir||''})});if($('tmdb-key-input')){$('tmdb-key-input').value='';$('tmdb-key-input').dataset.set='false';}if($('tmdb-status')){$('tmdb-status').textContent='Aucune clé';$('tmdb-status').style.color='var(--muted)';}});
 
 /* ═══════════════════════════════════════════════════════════════
    PIN MODAL

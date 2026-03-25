@@ -59,8 +59,6 @@ pending_disk    = None
 watched_folders = []
 observers       = []
 scan_progress   = {"running": False, "current": 0, "total": 0, "folder": "", "done": False, "count": 0}
-autotag_progress = {"running": False, "done": False, "folder": "", "current": "", "total": 0, "processed": 0, "tagged": 0, "skipped": 0, "errors": 0, "last_error": "", "overwrite": False, "only_untagged": True}
-autotag_stop_flag = False
 
 # ── Config ────────────────────────────────────────────────────────
 def load_config():
@@ -391,95 +389,6 @@ def fetch_tmdb(serie, saison, key=None):
     except Exception as e: log.error(f"TMDB: {e}"); return None
 
 # ── Ollama ────────────────────────────────────────────────────────
-def call_ollama_prompt(prompt: str, timeout: int = 120) -> str:
-    try:
-        r = requests.post(OLLAMA_URL, json={"model":MODELE,"prompt":prompt,"stream":False}, timeout=timeout)
-        r.raise_for_status()
-        data = r.json()
-        return data.get("response", "") or ""
-    except Exception as e:
-        log.error(f"Ollama: {e}")
-        return ""
-
-def extract_json_object(text: str) -> dict:
-    if not text:
-        return {}
-    try:
-        return json.loads(text)
-    except Exception:
-        pass
-    m = re.search(r"\{.*\}", text, re.DOTALL)
-    if not m:
-        return {}
-    try:
-        return json.loads(m.group())
-    except Exception:
-        return {}
-
-def normalize_tags_value(value) -> str:
-    if isinstance(value, list):
-        raw = value
-    else:
-        raw = re.split(r"[,;|\n]", str(value or ""))
-    out, seen = [], set()
-    for item in raw:
-        tag = re.sub(r"\s+", " ", str(item).strip(" #.-_\t\r\n")).strip()
-
-        if not tag:
-            continue
-        key = tag.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(tag[:32])
-    return ", ".join(out[:8])
-
-def generate_tags_from_filename(nom: str, type_fichier: str = "", serie: str = "") -> str:
-    prompt = (
-        "Tu aides à classer des fichiers multimédias.\n"
-        "Réponds uniquement en JSON sous la forme {\"tags\":[\"tag1\",\"tag2\"]}.\n"
-        "Règles :\n"
-        "- déduis des tags courts et utiles uniquement à partir du nom de fichier et des métadonnées fournies\n"
-        "- au maximum 6 tags\n"
-        "- pas de phrase complète, pas d'explication\n"
-        "- utilise le français quand c'est naturel\n\n"
-        f"Nom du fichier: {nom}\n"
-        f"Type: {type_fichier or 'Inconnu'}\n"
-        f"Série: {serie or 'Aucune'}\n"
-    )
-    data = extract_json_object(call_ollama_prompt(prompt, timeout=90))
-    tags = normalize_tags_value(data.get("tags", ""))
-    if tags:
-        return tags
-    # fallback léger sans IA si jamais Ollama répond mal
-    stem = Path(nom).stem
-    parts = re.split(r"[^A-Za-z0-9À-ÿ]+", stem)
-    banned = {"x264","x265","h264","h265","webrip","webdl","bluray","1080p","720p","2160p","pdf","jpg","jpeg","png","mp3","flac","mkv","mp4"}
-    fallback = []
-    for p in parts:
-        if len(p) < 3:
-            continue
-        key = p.lower()
-        if key in banned or key.isdigit():
-            continue
-        if key not in [x.lower() for x in fallback]:
-            fallback.append(p)
-        if len(fallback) >= 4:
-            break
-    return ", ".join(fallback)
-
-def apply_autotag_to_row(row, overwrite: bool = False) -> dict:
-    current_tags = (row["tags"] or "").strip()
-    if current_tags and not overwrite:
-        return {"ok": True, "skipped": True, "tags": current_tags}
-    tags = generate_tags_from_filename(row["nom"] or "", row["type"] or "", row["serie"] or "")
-    if not tags:
-        return {"ok": False, "error": "Aucun tag généré"}
-    con = get_db()
-    con.execute("UPDATE fichiers SET tags=? WHERE id=?", (tags, row["id"]))
-    con.commit(); con.close()
-    return {"ok": True, "skipped": False, "tags": tags}
-
 def analyse_pdf(chemin):
     try:
         import pdfplumber
@@ -489,8 +398,8 @@ def analyse_pdf(chemin):
     prompt = (f"PDF:\n\n{texte}\n\n"
               'Réponds uniquement en JSON : {"titre":"...","resume":"2-3 phrases","tags":"tag1,tag2,tag3"}')
     try:
-        response = call_ollama_prompt(prompt, timeout=120)
-        m = re.search(r"\{.*\}", response, re.DOTALL)
+        r = requests.post(OLLAMA_URL, json={"model":MODELE,"prompt":prompt,"stream":False}, timeout=120)
+        m = re.search(r"\{.*\}", r.json().get("response",""), re.DOTALL)
         if m:
             d = json.loads(m.group())
             return d.get("titre",""), d.get("resume",""), d.get("tags","")
@@ -1057,92 +966,6 @@ def add_rule(req:RuleModel):
 def delete_rule(rule_id:str):
     rules=[r for r in load_rules() if r["id"]!=rule_id]
     save_rules(rules); return {"ok":True,"rules":rules}
-
-class AutoTagReq(BaseModel):
-    chemin:str
-    nom:str=""
-    type:str=""
-    serie:str=""
-
-@app.post("/autotag")
-def post_autotag(req: AutoTagReq):
-    con = get_db()
-    row = con.execute("SELECT id,nom,type,serie,tags FROM fichiers WHERE chemin=?", (req.chemin,)).fetchone()
-    con.close()
-    if not row:
-        return {"ok": False, "error": "Fichier introuvable"}
-    result = apply_autotag_to_row(row, overwrite=True)
-    if not result.get("ok"):
-        return {"ok": False, "error": result.get("error", "Erreur auto-tag") }
-    return {"ok": True, "tags": result.get("tags", "")}
-
-class AutoTagFolderReq(BaseModel):
-    folder:str
-    limit:int=200
-    overwrite:bool=False
-    only_untagged:bool=True
-
-@app.post("/autotag/folder/start")
-def start_autotag_folder(req: AutoTagFolderReq):
-    global autotag_progress, autotag_stop_flag
-    if autotag_progress.get("running"):
-        return {"ok": False, "error": "Un auto-tag dossier est déjà en cours"}
-    folder = (req.folder or "").strip()
-    if not folder:
-        return {"ok": False, "error": "Dossier manquant"}
-    limit = max(1, min(int(req.limit or 200), 1000))
-    like = folder.rstrip('\\/') + '%'
-    conds = ["chemin LIKE ?"]
-    params = [like]
-    if req.only_untagged and not req.overwrite:
-        conds.append("(tags IS NULL OR TRIM(tags)='')")
-    con = get_db()
-    rows = con.execute(f"SELECT id,nom,type,serie,tags,chemin FROM fichiers WHERE {' AND '.join(conds)} ORDER BY nom LIMIT ?", (*params, limit)).fetchall()
-    con.close()
-    total = len(rows)
-    autotag_stop_flag = False
-    autotag_progress = {"running": total > 0, "done": total == 0, "folder": folder, "current": "", "total": total, "processed": 0, "tagged": 0, "skipped": 0, "errors": 0, "last_error": "", "overwrite": bool(req.overwrite), "only_untagged": bool(req.only_untagged)}
-    if total == 0:
-        return {"ok": True, "started": False, "count": 0}
-
-    def worker(rows_snapshot):
-        global autotag_progress, autotag_stop_flag
-        for row in rows_snapshot:
-            if autotag_stop_flag:
-                break
-            autotag_progress["current"] = row["nom"]
-            try:
-                result = apply_autotag_to_row(row, overwrite=req.overwrite)
-                if result.get("ok"):
-                    if result.get("skipped"):
-                        autotag_progress["skipped"] += 1
-                    else:
-                        autotag_progress["tagged"] += 1
-                else:
-                    autotag_progress["errors"] += 1
-                    autotag_progress["last_error"] = result.get("error", "Erreur")
-            except Exception as e:
-                autotag_progress["errors"] += 1
-                autotag_progress["last_error"] = str(e)
-            finally:
-                autotag_progress["processed"] += 1
-        autotag_progress["running"] = False
-        autotag_progress["done"] = True
-        autotag_progress["current"] = ""
-
-    threading.Thread(target=worker, args=(rows,), daemon=True).start()
-    return {"ok": True, "started": True, "count": total}
-
-@app.get("/autotag/folder/status")
-def get_autotag_folder_status():
-    return autotag_progress
-
-@app.post("/autotag/folder/stop")
-def stop_autotag_folder():
-    global autotag_stop_flag
-    autotag_stop_flag = True
-    return {"ok": True}
-
 
 @app.get("/regroup/suggestions")
 def get_regroup_suggestions():

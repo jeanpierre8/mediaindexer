@@ -91,7 +91,6 @@
       <div class="detail-section-title">Tags Ollama</div>
       <div class="detail-tags" id="detail-tags"></div>
       <button class="btn-fix-serie" id="btn-fix-serie">✎ Corriger série/saison/épisode</button>
-      <button class="btn-autotag" id="btn-autotag">✦ Auto-tag IA</button>
       <button class="btn-open-file" id="btn-open-file">▶ Ouvrir le fichier</button>
       <button class="btn-analyse" id="btn-ollama">Analyser avec Ollama</button>
     </div>
@@ -162,42 +161,25 @@
         </div>
         <div class="settings-divider"></div>
         <div class="settings-group">
+          <div class="settings-group-title">Dossiers surveillés</div>
+          <div class="settings-folders-list" id="folders-list"><div class="settings-folder-loading">Chargement…</div></div>
+          <button class="settings-add-folder-btn" id="btn-add-folder">+ Ajouter</button>
+        </div>
+        <div class="settings-divider"></div>
+        <div class="settings-group">
           <div class="settings-group-title">Fermeture de l'application</div>
           <div class="settings-group-desc">Coupe aussi le backend Python quand tu fermes la fenêtre principale.</div>
           <div class="backup-toggle-row">
-            <label class="toggle-label"><input type="checkbox" id="backend-stop-on-close"/> Arrêter aussi le backend à la fermeture</label>
+            <label class="toggle-label"><input type="checkbox" id="backend-stop-on-close" checked/> Arrêter aussi le backend à la fermeture</label>
           </div>
           <div class="settings-info-row" id="backend-stop-on-close-status" style="margin-top:10px">Chargement…</div>
         </div>
         <div class="settings-divider"></div>
         <div class="settings-group">
-          <div class="settings-group-title">Auto-tag IA d'un dossier</div>
-          <div class="settings-group-desc">Choisis un dossier déjà indexé puis laisse Ollama générer des tags à partir des noms de fichiers.</div>
-          <div class="settings-info-row" id="autotag-folder-display">Aucun dossier sélectionné</div>
-          <div class="autotag-folder-options">
-            <label class="autotag-folder-check"><input type="checkbox" id="autotag-only-untagged" checked> Seulement les fichiers sans tags</label>
-            <label class="autotag-folder-check"><input type="checkbox" id="autotag-overwrite"> Écraser les tags existants</label>
-          </div>
-          <div class="autotag-folder-actions">
-            <select class="settings-select autotag-folder-limit" id="autotag-folder-limit">
-              <option value="50">50 fichiers</option>
-              <option value="100">100 fichiers</option>
-              <option value="200" selected>200 fichiers</option>
-              <option value="500">500 fichiers</option>
-            </select>
-            <button class="settings-add-folder-btn" id="btn-autotag-folder-pick">Choisir le dossier</button>
-          </div>
-          <div class="autotag-folder-actions">
-            <button class="settings-apply-btn" id="btn-autotag-folder-start">Lancer l'auto-tag</button>
-            <button class="settings-clear-btn" id="btn-autotag-folder-stop">Stop</button>
-          </div>
-          <div class="batch-status-row autotag-folder-status" id="autotag-folder-status">Prêt.</div>
-        </div>
-        <div class="settings-divider"></div>
-        <div class="settings-group">
-          <div class="settings-group-title">Dossiers surveillés</div>
-          <div class="settings-folders-list" id="folders-list"><div class="settings-folder-loading">Chargement…</div></div>
-          <button class="settings-add-folder-btn" id="btn-add-folder">+ Ajouter</button>
+          <div class="settings-group-title">Mises à jour</div>
+          <div class="settings-group-desc">Vérifie si une nouvelle version de l'application est disponible.</div>
+          <button class="settings-apply-btn" id="btn-check-update" style="margin-top:10px">Vérifier les mises à jour</button>
+          <div class="settings-feedback" id="update-feedback"></div>
         </div>
         <div class="settings-divider"></div>
         <div class="settings-group">
