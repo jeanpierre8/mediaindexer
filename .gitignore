@@ -44,3 +44,5 @@ build/
 .env
 .env.*
 !.env.example
+
+src-tauri/binaries/*.exe

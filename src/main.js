@@ -1043,6 +1043,7 @@ function attachResizableColumns(table, cols, scope) {
   });
   table.prepend(colgroup);
   table.style.tableLayout = 'fixed';
+  table.classList.add('resizable-table');
 
   const applyMinWidth = () => {
     table.style.minWidth = `${Math.max(totalWidth, table.parentElement?.clientWidth || 0)}px`;
