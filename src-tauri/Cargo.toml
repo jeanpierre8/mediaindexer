@@ -1,6 +1,6 @@
 [package]
 name = "media-indexer"
-version = "1.0.1"
+version = "1.0.2"
 description = "Media Indexer"
 authors = ["Jeanpierre Tran"]
 edition = "2021"
